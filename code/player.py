@@ -1,209 +1,324 @@
-import pygame
-
-from settings import START_POSITION
-from support import import_folder
+import core as c
+from timer import Timer
 
 
-class Player(pygame.sprite.Sprite):
+class Player(c.Sprite):
 
-    def __init__(self, position, create_jump_particles):
+    def __init__(self, collision_sprites, data, frames, groups, position, semi_collision_sprites):
 
-        super().__init__()
-        # self.import_character_assets()
-        # # self.frame_index = 0
-        # self.animation_speed = 0.15
-        # self.image = self.animations["idle"][self.frame_index]
-        self.image = pygame.Surface((64, 64))
-        self.image.fill("black")
-        self.rect = self.image.get_rect(topleft=position)
-        print(self.rect.x)
+        # general setup
+        super().__init__(groups)
+        self.z = c.Z_LAYERS["main"]
+        self.data = data
 
-        self.dust_run_particles = []
-        self.import_dust_run_particles()
-        self.dust_frame_index = 0
-        self.dust_animation_speed = 0.15
-        self.surface = pygame.display.get_surface()
-        self.create_jump_particles = create_jump_particles
-
-        self.velocity = pygame.math.Vector2(0, 0)
-        self.acceleration = pygame.math.Vector2(0, 1)
-        self.speed = 100
-        self.gravity = 1
-        self.jump_speed = -8
-        self.terminal_velocity = 20
-        
-        self.status = "idle"
+        # image
+        self.frames = frames
+        self.frame_index = 0
+        self.state = "idle"
         self.facing_right = True
-        self.on_ceiling = False
-        self.on_ground = False
-        self.on_left = False
-        self.on_right = False
+        self.image = self.frames[self.state][self.frame_index]
 
-        self.is_dead = False
+        #  rects
+        self.rect = self.image.get_frect(topleft=position)
+        self.hit_box_rectangle = self.rect.inflate(-76, -36)
+        self.old_rect = self.hit_box_rectangle.copy()
 
-        self.going_right = ""
+        #  movement
+        self.direction = c.Vector2()
+        self.speed = 200
+        self.gravity = 1300
+        self.jump = False
+        self.jump_height = 675
+        self.interacting = False
 
-    # def import_character_assets(self):
-    #
-    #     character_path = "../graphics/character/"
-    #     self.animations = {
-    #         "fall": [], "idle": [], "jump": [], "run": []
-    #     }
-    #
-    #     for animation in self.animations.keys():
-    #
-    #         full_path = character_path + animation
-    #         self.animations[animation] = import_folder(full_path)
+        #  collision
+        self.collision_sprites = collision_sprites
+        self.semi_collision_sprites = semi_collision_sprites
+        self.on_surface = {"floor": False, "left": False, "right": False}
+        self.platform = None
+
+        #  timers
+        self.timers = {
+            "hit": Timer(400),
+            "interact block": Timer(500),
+            "platform skip": Timer(100),
+            "wall jump": Timer(400),
+            "wall slide block": Timer(250)
+        }
+
+    def input(self):
+
+        keys = c.get_pressed()
+        input_vector = c.Vector2(0, 0)
+
+        if not self.timers["wall jump"].active:
+
+            if keys[c.pygame.K_DOWN]:
     
-    def import_dust_run_particles(self):
-
-        run_path = "../graphics/character/dust_particles/run"
-        self.dust_run_particles = import_folder(run_path)
+                self.timers["platform skip"].activate()
+            
+            if keys[c.pygame.K_LEFT]:
     
-    # def animate(self):
-    #
-    #     animation = self.animations[self.status]
-    #     self.frame_index += self.animation_speed
-    #
-    #     if self.frame_index >= len(animation):
-    #
-    #         self.frame_index = 0
-    #
-    #     image = animation[int(self.frame_index)]
-    #
-    #     if self.facing_right:
-    #
-    #         self.image = image
-    #
-    #     else:
-    #
-    #         flipped_image = pygame.transform.flip(image, True, False)
-    #         self.image = flipped_image
-    #
-    #     if self.on_ground and self.on_right:
-    #
-    #         self.rect = self.image.get_rect(bottomright=self.rect.bottomright)
-    #
-    #     elif self.on_ground and self.on_left:
-    #
-    #         self.rect = self.image.get_rect(bottomleft=self.rect.bottomleft)
-    #
-    #     elif self.on_ground:
-    #
-    #         self.rect = self.image.get_rect(midbottom=self.rect.midbottom)
-    #
-    #     elif self.on_ceiling and self.on_right:
-    #
-    #         self.rect = self.image.get_rect(topright=self.rect.topright)
-    #
-    #     elif self.on_ceiling and self.on_left:
-    #
-    #         self.rect = self.image.get_rect(topleft=self.rect.topleft)
-    #
-    #     elif self.on_ceiling:
-    #
-    #         self.rect = self.image.get_rect(midtop=self.rect.midtop)
-    #
-    #     else:
-    #
-    #         self.rect = self.image.get_rect(center=self.rect.center)
-
-    def run_dust_animation(self):
-
-        if self.status == "run" and self.on_ground:
-
-            self.dust_frame_index += self.dust_animation_speed
-
-            if self.dust_frame_index >= len(self.dust_run_particles):
-
-                self.dust_frame_index = 0
-
-            dust_particle = self.dust_run_particles[int(self.dust_frame_index)]
-
-            if self.facing_right:
-
-                position = self.rect.bottomleft - pygame.math.Vector2(6, 10)
-                self.surface.blit(dust_particle, position)
-
-            else:
-
-                position = self.rect.bottomright - pygame.math.Vector2(6, 10)
-                flipped_dust_particle = pygame.transform.flip(
-                    dust_particle, True, False
-                )
-                self.surface.blit(flipped_dust_particle, position)
-    
-    def get_input(self):
-        """
-        delta time
-        """
-
-        keys = pygame.key.get_pressed()
-        jump_released = True
-
-        if not self.is_dead:
-        
-            if keys[pygame.K_LEFT]:
-    
-                self.velocity.x = -1
+                input_vector.x -= 1
                 self.facing_right = False
-                self.going_right = False
+            
+            if keys[c.pygame.K_RIGHT]:
     
-            elif keys[pygame.K_RIGHT]:
-    
-                self.velocity.x = 1
+                input_vector.x += 1
                 self.facing_right = True
-                self.going_right = True
     
-            else:
+            if keys[c.pygame.K_UP]:
     
-                self.velocity.x = 0
-                self.going_right = ""
-    
-            if keys[pygame.K_SPACE] and self.on_ground:
-    
-                self.jump()
-                self.create_jump_particles(self.rect.midbottom)
-                jump_released = False
+                input_vector.y -= 1
 
-        else:
+            if keys[c.pygame.K_x]:
 
-            self.velocity.x = 0
-            self.velocity.y = 0
-
-    def get_status(self):
-
-        if self.velocity.y > 1:
-
-            self.status = "fall"
-
-        elif self.velocity.y < 0:
-
-            self.status = "jump"
-
-        else:
-
-            if self.velocity.x == 0:
-
-                self.status = "idle"
-
+                self.interact()
+        
+            if input_vector:
+                
+                self.direction.x = input_vector.normalize().x
+                
             else:
                 
-                self.status = "run"
+                self.direction.x = 0
 
-    def apply_gravity(self):
+        if keys[c.pygame.K_SPACE]:
 
-        self.velocity.y += self.acceleration.y
-        self.velocity.y = min(self.velocity.y, self.terminal_velocity)
-        self.rect.y += self.velocity.y
+            self.jump = True
 
-    def jump(self):
+    def interact(self):
 
-        self.velocity.y = self.jump_speed
+        if not self.timers["interact block"].active:
 
-    def update(self):
+            self.interacting = True
+            self.frame_index = 0
+            self.timers["interact block"].activate()
+            
+    def move(self, delta_time):
 
-        self.get_input()
-        self.get_status()
-        # self.animate()
-        self.run_dust_animation()
+        #  horizontal
+        self.hit_box_rectangle.x += self.direction.x * self.speed * delta_time
+        self.collision("horizontal")
+        
+        #  vertical
+        if (
+            not self.on_surface["floor"] and
+            any((self.on_surface["left"], self.on_surface["right"])) and
+            self.timers["wall slide block"].active
+        ):
+
+            self.direction.y = 0
+            self.hit_box_rectangle.y += self.gravity / 10 * delta_time
+            
+        else:
+
+            self.direction.y += self.gravity / 2 * delta_time
+            self.hit_box_rectangle.y += self.direction.y * delta_time
+            self.direction.y += self.gravity / 2 * delta_time
+
+        if self.jump:
+
+            if self.on_surface["floor"]:
+
+                self.direction.y = -self.jump_height
+                self.timers["wall slide block"].activate()
+                self.hit_box_rectangle.bottom -= 1
+
+            elif (
+                  any((self.on_surface["left"], self.on_surface["right"])) and not 
+                  self.timers["wall slide block"].active
+            ):
+
+                self.timers["wall jump"].activate()
+                self.direction.y = -self.jump_height
+                self.direction.x = 1 if self.on_surface["left"] else -1
+
+            self.jump = False
+
+        self.collision("vertical")
+        self.semi_collision()
+        self.rect.center = self.hit_box_rectangle.center
+
+    def platform_move(self, delta_time):
+
+        if self.platform:
+
+            self.hit_box_rectangle.topleft += self.platform.direction * self.platform.speed * delta_time
+    
+    def check_contact(self):
+
+        # ceiling_rectangle = c.pygame.Rect(self.rect.topleft, (self.rect.width, -2))
+        floor_rectangle = c.pygame.Rect(self.hit_box_rectangle.bottomleft, (self.hit_box_rectangle.width, 2))
+        left_rectangle = c.pygame.Rect(self.rect.topleft, (-2, self.rect.height))
+        right_rectangle = c.pygame.Rect(self.rect.topright, (2, self.rect.height))
+        collide_rectangles = [sprite.rect for sprite in self.collision_sprites]
+        semi_collide_rectangles = [sprite.rect for sprite in self.semi_collision_sprites]
+
+        #  collisions
+        if (
+            floor_rectangle.collidelist(collide_rectangles) >= 0 or
+            floor_rectangle.collidelist(semi_collide_rectangles) >= 0 and
+            self.direction.y >= 0
+        ):
+
+            self.on_surface["floor"] = True
+
+        else:
+
+            self.on_surface["floor"] = False
+
+        self.platform = None
+        sprites = self.collision_sprites.sprites() + self.semi_collision_sprites.sprites()
+
+        for sprite in [sprite for sprite in sprites if hasattr(sprite, "moving")]:
+
+            if sprite.rect.colliderect(floor_rectangle):
+
+                self.platform = sprite
+    
+    def collision(self, axis):
+
+        for sprite in self.collision_sprites:
+
+            if sprite.rect.colliderect(self.hit_box_rectangle):
+
+                if axis == "horizontal":
+
+                    #  left
+                    if (
+                        self.hit_box_rectangle.left <= sprite.rect.right and
+                        int(self.old_rect.left) >= int(sprite.old_rect.right)
+                    ):
+
+                        self.hit_box_rectangle.left = sprite.rect.right
+
+                    #  right
+                    if (
+                        self.hit_box_rectangle.right >= sprite.rect.left and
+                        int(self.old_rect.right) <= int(sprite.old_rect.left)
+                    ):
+
+                        self.hit_box_rectangle.right = sprite.rect.left
+
+                else:  # vertical
+
+                    #  bottom
+                    if (
+                        self.hit_box_rectangle.bottom >= sprite.rect.top and
+                        int(self.old_rect.bottom) <= int(sprite.old_rect.top)
+                    ):
+
+                        self.hit_box_rectangle.bottom = sprite.rect.top
+
+                    #  top
+                    if (
+                        self.hit_box_rectangle.top <= sprite.rect.bottom and
+                        int(self.old_rect.top) >= int(sprite.old_rect.bottom)
+                    ):
+
+                        self.hit_box_rectangle.top = sprite.rect.bottom
+
+                        if hasattr(sprite, "moving"):
+
+                            self.hit_box_rectangle.top += 6
+
+                    self.direction.y = 0
+    
+    def semi_collision(self):
+
+        if not self.timers["platform skip"].active:
+
+            for sprite in self.semi_collision_sprites:
+    
+                if sprite.rect.colliderect(self.hit_box_rectangle):
+    
+                    if (
+                            self.hit_box_rectangle.bottom >= sprite.rect.top and
+                            int(self.old_rect.bottom) <= int(sprite.old_rect.top)
+                    ):
+    
+                        self.hit_box_rectangle.bottom = sprite.rect.top
+                            
+                        if self.direction.y > 0:
+                                
+                            self.direction.y = 0
+    
+    def update_timers(self):
+
+        for timer in self.timers.values():
+
+            timer.update()
+    
+    def animate(self, delta_time):
+
+        self.frame_index += c.ANIMATION_SPEED * delta_time
+
+        if self.state == "attack" and self.frame_index >= len(self.frames[self.state]):
+
+            self.state = "idle"
+
+        self.image = self.frames[self.state][int(self.frame_index % len(self.frames[self.state]))]
+        self.image = self.image if self.facing_right else c.flip(self.image, True, False)
+
+        if self.interacting and self.frame_index > len(self.frames[self.state]):
+
+            self.interacting = False
+    
+    def get_state(self):
+
+        if self.on_surface["floor"]:
+
+            if self.interacting:
+                
+                self.state = "attack"
+                
+            else:
+                
+                self.state = "idle" if self.direction.x == 0 else "run"
+
+        else:
+
+            if self.interacting:
+                
+                self.state = "air_attack"
+
+            else:
+            
+                if any((self.on_surface["left"], self.on_surface["right"])):
+    
+                    self.state = "wall"
+    
+                else:
+    
+                    self.state = "jump" if self.direction.y < 0 else "fall"
+    
+    def get_damage(self):
+
+        if not self.timers["hit"].active:
+
+            self.data.health -= 1
+            self.timers["hit"].activate()
+    
+    def flicker(self):
+
+        if self.timers["hit"].active and c.sin(c.get_ticks() * 100) >= 0:
+
+            white_mask = c.from_surface(self.image)
+            white_surface = white_mask.to_surface()
+            white_surface.set_colorkey("black")
+            self.image = white_surface
+    
+    def update(self, delta_time):
+
+        self.old_rect = self.hit_box_rectangle.copy()
+        self.update_timers()
+
+        self.input()
+        self.move(delta_time)
+        self.platform_move(delta_time)
+        self.check_contact()
+
+        self.get_state()
+        self.animate(delta_time)
+        self.flicker()

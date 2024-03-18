@@ -1,238 +1,438 @@
-import pygame
-
-from bit_effect import BitEffect
-from map import LEVEL1_MAP
+import core as c
+from enemies import Pearl, Shell, Tooth
+from groups import AllSprites
 from player import Player
-from save import Save
-import settings as s
-from tile import Tile
+import sprites as s
 
 
 class Level:
 
-    def __init__(self):
+    def __init__(self, data, level_frames, tmx_map):
+
+        self.surface = c.get_surface()
+        self.data = data
+
+        # level data
+        self.level_right = tmx_map.width * c.TILE_SIZE
+        self.level_bottom = tmx_map.height * c.TILE_SIZE
+        
+        tmx_level_properties = tmx_map.get_layer_by_name("Data")[0].properties
+
+        if tmx_level_properties["bg"]:
+
+            bg_tile = level_frames["bg_tile"][tmx_level_properties["bg"]]
+
+        else:
+
+            bg_tile = None
+
+        #  groups
+        self.all_sprites = AllSprites(
+            clouds= {
+                "large": level_frames["big_cloud"],
+                "small": level_frames["small_cloud"]
+            },
+            height=tmx_map.height,
+            horizon_line=tmx_level_properties["horizon_line"],
+            width=tmx_map.width,
+            bg_tile=bg_tile,
+            top_limit=tmx_level_properties["top_limit"]
+        )
+        self.collision_sprites = c.Group()
+        self.damage_sprites = c.Group()
+        self.item_sprites = c.Group()
+        self.pearl_sprites = c.Group()
+        self.semi_collision_sprites = c.Group()
+        self.tooth_sprites = c.Group()
 
         self.player = None
-        self.world_x_shift = 0
-        self.world_y_shift = 0
-        self.dust_sprite = pygame.sprite.GroupSingle()
+        
+        self.setup(tmx_map, level_frames)
 
-        self.surface = pygame.display.get_surface()
-        self.save = Save()
-        self.setup_level()
-        self.current_x = 0
-        # Maybe an assign method to group them all together?
-        self.player_on_ground = False
+        # frames
+        self.particle_frames = level_frames["particle"]
+        self.pearl_frames = level_frames["pearl"]
 
-    def create_jump_bit(self, position):
+    def setup(self, tmx_map, level_frames):
 
-        if self.player.sprite.facing_right:
+        #  tiles
+        for layer in ["BG", "Terrain", "FG", "Platforms"]:
 
-            position -= pygame.math.Vector2(10, 5)
+            for x, y, surface in tmx_map.get_layer_by_name(layer).tiles():
 
-        else:
+                groups = [self.all_sprites]
 
-            position += pygame.math.Vector2(10, -5)
+                if layer == "Platforms":
 
-        # Why not just use "self.player.sprite.rect.midbottom" for position?
-        jump_bit_sprite = BitEffect(position, "jump")
+                    groups.append(self.semi_collision_sprites)
 
-        # inheritance returns an object
-        self.dust_sprite.add(jump_bit_sprite)
-    
-    def get_player_on_ground(self):
+                if layer == "Terrain":
 
-        if self.player.sprite.on_ground:
+                    groups.append(self.collision_sprites)
 
-            self.player_on_ground = True
+                match layer:
 
-        else:
+                    case "BG": z = c.Z_LAYERS["bg_tiles"]
 
-            self.player_on_ground = False
-    
-    def create_landing_bit(self):
+                    case "FG": z = c.Z_LAYERS["bg_tiles"]
 
-        if not (
-                self.player_on_ground and self.player.sprite.on_ground
-        ) and not self.dust_sprite.sprites():
+                    case _: z = c.Z_LAYERS["main"]
 
-            if self.player.sprite.facing_right:
+                s.CustomSprite((x * c.TILE_SIZE, y * c.TILE_SIZE), groups, surface, z)
 
-                offset = pygame.math.Vector2(-10, 15)
+        # background details
+        for thing in tmx_map.get_layer_by_name("BG details"):
+
+            if thing.name == "static":
+
+                s.CustomSprite((thing.x, thing.y), self.all_sprites, thing.image, c.Z_LAYERS["bg_tiles"])
 
             else:
 
-                offset = pygame.math.Vector2()
-            
-            fall_dust_sprite = BitEffect(
-                self.player.sprite.rect.midbottom - offset,
-                "land"
+                s.AnimatedSprite(
+                    level_frames[thing.name],
+                    self.all_sprites,
+                    (thing.x, thing.y),
+                    c.Z_LAYERS["bg_tiles"]
+                )
+
+                if thing.name == "candle":
+
+                    s.AnimatedSprite(
+                        level_frames["candle_light"],
+                        self.all_sprites,
+                        (thing.x, thing.y) + c.Vector2(-20, -20),
+                        c.Z_LAYERS["bg_tiles"]
+                    )
+
+        #  objects
+        for thing in tmx_map.get_layer_by_name("Objects"):
+
+            if thing.name == "player":
+
+                self.player = Player(
+                    collision_sprites=self.collision_sprites,
+                    data=self.data,
+                    frames=level_frames["player"],
+                    groups=self.all_sprites,
+                    position=(thing.x, thing.y),
+                    semi_collision_sprites=self.semi_collision_sprites,
+                )
+
+            else:
+
+                if thing.name in ("barrel", "crate"):
+
+                    s.CustomSprite((thing.x, thing.y), (self.all_sprites, self.collision_sprites), thing.image)
+
+                else:
+
+                    # frames
+                    if "palm" not in thing.name:
+
+                        frames = level_frames[thing.name]
+
+                    else:
+
+                        frames = level_frames["palm"][thing.name]
+
+                    if thing.name == "floor_spike" and thing.properties["inverted"]:
+
+                        frames = [c.flip(frame, False, True) for frame in frames]
+
+                    # groups
+                    groups = [self.all_sprites]
+
+                    if thing.name in ("palm_large", "palm_small"):
+
+                        groups.append(self.semi_collision_sprites)
+
+                    if thing.name in ("floor_spike", "saw"):
+
+                        groups.append(self.damage_sprites)
+
+                    # z index
+                    z = c.Z_LAYERS["main"] if "bg" not in thing.name else c.Z_LAYERS["bg_details"]
+
+                    # animation speed
+                    if "palm" not in thing.name:
+
+                        animation_speed = c.ANIMATION_SPEED
+
+                    else:
+
+                        animation_speed = c.ANIMATION_SPEED + c.uniform(-1, 1)
+
+                    s.AnimatedSprite(frames, groups, (thing.x, thing.y), animation_speed, z)
+
+            if thing.name == "flag":
+
+                self.level_finish_rectangle = c.FRect((thing.x, thing.y), (thing.width, thing.height))
+        
+        #  moving objects
+        for thing in tmx_map.get_layer_by_name("Moving Objects"):
+
+            if thing.name == "spike":
+
+                # position, surface
+                s.SpikedSprite(
+                    start_angle=thing.properties["start_angle"],
+                    end_angle=thing.properties["end_angle"],
+                    groups=(self.all_sprites, self.damage_sprites),
+                    position=(thing.x + thing.width / 2, thing.y + thing.height / 2),
+                    radius=thing.properties["radius"],
+                    speed=thing.properties["speed"],
+                    surface=level_frames["ball_spike"]
+                )
+
+                for radius in range(0, thing.properties["radius"], 20):
+
+                    s.SpikedSprite(
+                        start_angle=thing.properties["start_angle"],
+                        end_angle=thing.properties["end_angle"],
+                        groups=self.all_sprites,
+                        position=(thing.x + thing.width / 2, thing.y + thing.height / 2),
+                        radius=radius,
+                        speed=thing.properties["speed"],
+                        surface=level_frames["spike_chain"],
+                        z=c.Z_LAYERS["bg_details"]
+                    )
+
+            else:
+
+                frames = level_frames[thing.name]
+
+                if thing.properties["platform"]:
+
+                    groups = (self.all_sprites, self.semi_collision_sprites)
+
+                else:
+
+                    groups = (self.all_sprites, self.damage_sprites)
+
+                if thing.width > thing.height:  # horizontal
+
+                    move_direction = "x"
+                    start_position = (
+                        thing.x,
+                        thing.y + thing.height / 2
+                    )
+                    end_position = (
+                        thing.x + thing.width,
+                        thing.y + thing.height / 2
+                    )
+
+                else:  # vertical
+
+                    move_direction = "y"
+                    start_position = (
+                        thing.x + thing.width / 2,
+                        thing.y
+                    )
+                    end_position = (
+                        thing.x + thing.width / 2,
+                        thing.y + thing.height
+                    )
+
+                speed = thing.properties["speed"]
+
+                s.MovingSprite(
+                    frames=frames,
+                    groups=groups,
+                    move_direction=move_direction,
+                    start_position=start_position,
+                    end_position=end_position,
+                    speed=speed,
+                    flip_image=thing.properties["flip"]
+                )
+
+                if thing.name == "saw":
+
+                    if move_direction == "x":
+
+                        y = start_position[1] - level_frames["saw_chain"].get_height() / 2
+                        left = int(start_position[0])
+                        right = int(end_position[0])
+
+                        for x in range(left, right, 20):
+
+                            s.CustomSprite(
+                                (x, y),
+                                self.all_sprites,
+                                level_frames["saw_chain"],
+                                c.Z_LAYERS["bg_details"]
+                            )
+
+                    else:
+
+                        x = start_position[0] - level_frames["saw_chain"].get_width() / 2
+                        top = int(start_position[1])
+                        bottom = int(end_position[1])
+
+                        for y in range(top, bottom, 20):
+
+                            s.CustomSprite(
+                                (x, y),
+                                self.all_sprites,
+                                level_frames["saw_chain"],
+                                c.Z_LAYERS["bg_details"]
+                            )
+
+        # enemies
+        for thing in tmx_map.get_layer_by_name("Enemies"):
+
+            if thing.name == "tooth":
+
+                Tooth(
+                    self.collision_sprites,
+                    level_frames["tooth"],
+                    (self.all_sprites, self.collision_sprites, self.tooth_sprites),
+                    (thing.x, thing.y)
+                )
+
+            if thing.name == "shell":
+
+                Shell(
+                    create_pearl=self.create_pearl,
+                    frames=level_frames["shell"],
+                    groups=(self.all_sprites, self.collision_sprites),
+                    player=self.player,
+                    position=(thing.x, thing.y),
+                    reverse=thing.properties["reverse"]
+                )
+
+        # items
+        for thing in tmx_map.get_layer_by_name("Items"):
+
+            s.ItemSprite(
+                data=self.data,
+                frames=level_frames["item"][thing.name],
+                groups=(self.all_sprites, self.item_sprites),
+                item_type=thing.name,
+                position=(thing.x + c.TILE_SIZE / 2, thing.y + c.TILE_SIZE / 2)
             )
 
-            # inheritance returns an object
-            self.dust_sprite.add(fall_dust_sprite)
+        # water
+        for thing in tmx_map.get_layer_by_name("Water"):
 
-    def setup_level(self):
-        
-        self.player = pygame.sprite.GroupSingle()
-        self.tiles = pygame.sprite.Group()
+            rows = int(thing.height / c.TILE_SIZE)
+            columns = int(thing.width / c.TILE_SIZE)
 
-        for row_index, row in enumerate(LEVEL1_MAP):
+            for row in range(rows):
 
-            for column_index, column in enumerate(row):
+                for column in range(columns):
 
-                x = column_index * s.TILE_SIZE
-                y = row_index * s.TILE_SIZE
+                    x = thing.x + column * c.TILE_SIZE
+                    y = thing.y + row * c.TILE_SIZE
 
-                if column == "P":
+                    if row == 0:
 
-                    new_x, new_y = self.save.pull_from_save()
-                                
-                    if new_x and new_y:
-            
-                        player_sprite = Player((new_x, new_y), self.create_jump_bit)
-            
+                        s.AnimatedSprite(
+                            frames=level_frames["water top"],
+                            groups=self.all_sprites,
+                            position=(x, y),
+                            animation_speed=c.ANIMATION_SPEED,
+                            z=c.Z_LAYERS["water"]
+                        )
+
                     else:
+
+                        s.CustomSprite(
+                            (x, y),
+                            self.all_sprites,
+                            level_frames["water body"],
+                            c.Z_LAYERS["water"]
+                        )
+
+    def create_pearl(self, direction, position):
+
+        Pearl(
+            direction,
+            (self.all_sprites, self.damage_sprites, self.pearl_sprites),
+            position,
+            150,
+            self.pearl_frames
+        )
+
+    def pearl_collision(self):
+
+        for sprite in self.collision_sprites:
+
+            sprite = c.spritecollide(sprite, self.pearl_sprites, True)
+
+            if sprite:
+
+                s.ParticleEffectSprite(self.particle_frames, self.all_sprites, sprite[0].rect.center)
+
+    def hit_collision(self):
+
+        for sprite in self.damage_sprites:
+
+            if sprite.rect.colliderect(self.player.hit_box_rectangle):
+
+                self.player.get_damage()
+                
+                if hasattr(sprite, "pearl"):
+
+                    sprite.kill()
+                    s.ParticleEffectSprite(self.particle_frames, self.all_sprites, sprite.rect.center)
+
+    def item_collision(self):
+
+        if self.item_sprites:
+
+            item_sprites = c.spritecollide(self.player, self.item_sprites, True)
+
+            if item_sprites:
+
+                item_sprites[0].activate()
+                s.ParticleEffectSprite(self.particle_frames, self.all_sprites, item_sprites[0].rect.center)
+
+    def attack_collision(self):
+
+        for target in self.pearl_sprites.sprites() + self.tooth_sprites.sprites():
+
+            facing_target = self.player.rect.centerx < target.rect.centerx and self.player.facing_right or \
+                            self.player.rect.centerx > target.rect.centerx and not self.player.facing_right
             
-                        player_sprite = Player((x, y), self.create_jump_bit)
-            
-                    # inheritance returns an object
-                    self.player.add(player_sprite)
+            if (
+                target.rect.colliderect(self.player.rect) and
+                self.player.interacting and
+                facing_target
+            ):
 
-                if column == "X":
+                target.reverse()
 
-                    tile = Tile((x, y))
-                    self.tiles.add(tile)
+    def check_constraint(self):
 
-    def scroll_x(self):
+        # bottom
+        if self.player.hit_box_rectangle.bottom > self.level_bottom:
 
-        player = self.player.sprite
-        player_x = player.rect.centerx
-        velocity_x = player.velocity.x
+            self.player.hit_box_rectangle.bottom = self.level_bottom
+        
+        # left
+        if self.player.hit_box_rectangle.left <= 0:
 
-        if player_x < self.surface.get_width() * 0.25 and velocity_x < 0:
+            self.player.hit_box_rectangle.left = 0
 
-            self.world_x_shift = 1
-            player.speed = 0
+        # right
+        if self.player.hit_box_rectangle.right >= self.level_right:
 
-        elif player_x > self.surface.get_width() * 0.75 and velocity_x > 0:
+            self.player.hit_box_rectangle.right = self.level_right
 
-            self.world_x_shift = -1
-            player.speed = 0
+        # success
+        if self.player.hit_box_rectangle.colliderect(self.level_finish_rectangle):
 
-        else:
+            pass
 
-            self.world_x_shift = 0
-            player.speed = 1
+    def run(self, delta_time):
 
-    def scroll_y(self):
-        """
-        test branch
-        """
+        self.surface.fill("black")
 
-        player = self.player.sprite
-        player_y = player.rect.centery
-        velocity_y = player.velocity.y
+        self.all_sprites.update(delta_time)
+        self.pearl_collision()
+        self.hit_collision()
+        self.item_collision()
+        self.check_constraint()
 
-        if player_y < self.surface.get_height() * 0.25 and velocity_y < 0:
-
-            self.world_y_shift = 1
-            player.speed = 0
-
-        elif player_y > self.surface.get_height() * 0.6 and velocity_y > 0:
-
-            self.world_y_shift = -1
-            player.speed = 0
-
-        else:
-
-            self.world_y_shift = 0
-            player.speed = 1
-
-    def horizontal_movement_collision(self, dt):
-
-        player = self.player.sprite
-        player.rect.x += player.velocity.x * player.speed
-
-        for tile in self.tiles.sprites():
-
-            if tile.rect.colliderect(player.rect):
-
-                if player.velocity.x < 0:
-
-                    player.rect.left = tile.rect.right
-                    player.on_left = True
-
-                    self.current_x = player.rect.left
-
-                elif player.velocity.x > 0:
-
-                    player.rect.right = tile.rect.left
-                    player.on_right = True
-
-                    self.current_x = player.rect.right
-
-        if player.on_left and (
-                player.rect.left < self.current_x or player.velocity.x >= 0
-        ):
-
-            player.on_left = False
-
-        if player.on_right and (
-                player.rect.right > self.current_x or player.velocity.x <= 0
-        ):
-
-            player.on_right = False
-
-    def vertical_movement_collision(self):
-
-        player = self.player.sprite
-        player.apply_gravity()
-
-        for tile in self.tiles.sprites():
-
-            if tile.rect.colliderect(player.rect):
-
-                if player.velocity.y > 0:
-
-                    player.rect.bottom = tile.rect.top
-                    player.velocity.y = 0
-                    player.on_ground = True
-
-                elif player.velocity.y < 0:
-
-                    player.rect.top = tile.rect.bottom
-                    player.velocity.y = 0
-                    player.on_ceiling = True
-
-        if (
-                player.on_ground and
-                player.velocity.y < 0 or player.velocity.y > 1
-        ):
-
-            player.on_ground = False
-
-        if player.on_ceiling and player.velocity.y > 0:
-
-            player.on_ceiling = False
-
-    def auto_save(self):
-
-        player = self.player.sprite
-        self.save.push_to_save(player.rect.x, player.rect.y - 100)
-    
-    def run(self, dt):
-
-        self.tiles.update(self.world_x_shift, self.world_y_shift)
-        self.tiles.draw(self.surface)
-        self.scroll_x()
-        self.scroll_y()
-        self.dust_sprite.update(self.world_x_shift, self.world_y_shift)
-        self.dust_sprite.draw(self.surface)
-
-        self.player.update()
-        self.horizontal_movement_collision(dt)
-        self.get_player_on_ground()
-        self.vertical_movement_collision()
-        self.create_landing_bit()
-        self.player.draw(self.surface)
+        self.all_sprites.draw(delta_time, self.player.hit_box_rectangle.center)

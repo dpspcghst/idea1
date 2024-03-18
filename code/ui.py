@@ -1,93 +1,89 @@
-import pygame
-
-import settings as s
-
+import core as c
+from sprites import AnimatedSprite
+from timer import Timer
 
 class UI:
 
-    def __init__(self):
+    def __init__(self, font, frames, ):
 
-        self.surface = pygame.display.get_surface()
-        self.image = pygame.image.load("../graphics/logos/ensōurobo.png")
-        self.font = pygame.font.Font("../graphics/now_regular.otf", 36)
-        self.company_text = "Dark Forest Presents"
-        self.by_text = "A GAME BY ALEKSANDR HEMINGWAY"
-        self.title_text = s.TITLE
+        self.surface = c.get_surface()
+        self.sprites = c.Group()
+        self.font = font
 
-        self.image_x = (self.surface.get_width() // 2) - 110
-        self.image_y = (self.surface.get_height() // 2) - 110
+        # health / hearts
+        self.heart_frames = frames["heart"]
+        self.heart_surface_width = self.heart_frames[0].get_width()
+        self.heart_padding = 5
 
-    def draw_text(self):
+        # coins
+        self.coin_amount = 0
+        self.coin_timer = Timer(1000)
+        self.coin_surface = frames["coin"]
 
-        company_surface = self.font.render(self.company_text, True, "blue")
-        company_rect = company_surface.get_rect(
-            topright=(
-                self.surface.get_width() - 80,
-                self.surface.get_height() - 80
-            )
-        )
+    def create_hearts(self, amount):
 
-        by_surface = self.font.render(self.by_text, True, "blue")
-        by_rect = by_surface.get_rect(
-            center=(
-                self.surface.get_width() // 2,
-                self.surface.get_height() * 0.75
-            )
-        )
+        for sprite in self.sprites:
 
-        self.surface.blit(company_surface, company_rect)
-        self.surface.blit(by_surface, by_rect)
-    
-    def fade_in(self):
-
-        clock = pygame.time.Clock()
-        alpha = 0
-    
-        while alpha < 255:
-
-            self.surface.fill((0 + alpha, 0 + alpha, 0 + alpha))
-            self.surface.set_alpha(alpha)
-            self.surface.blit(self.image, (self.image_x, self.image_y))
-            self.draw_text()
-            pygame.display.flip()
-            alpha += 2.5
-            clock.tick(30)
-    
-        pygame.time.wait(1250)
-
-    def fade_out(self):
-
-        clock = pygame.time.Clock()
-        alpha = 255
-
-        while alpha > 0:
-
-            self.surface.fill((255, 255, 255))
-            self.surface.set_alpha(alpha)
-            self.surface.blit(self.image, (self.image_x, self.image_y))
-            self.draw_text()
-            pygame.display.flip()
-            alpha -= 2.5
-            clock.tick(30)
-    
-        pygame.time.wait(1250)
-
-    def reveal_game(self):
-    
-        clock = pygame.time.Clock()
-        alpha = 0
-    
-        while alpha < 255:
-    
-            self.surface.fill((255 - alpha, 255 - alpha, 255 - alpha))
-            self.surface.blit(self.image, (self.image_x, self.image_y))
-            self.draw_text()
-            pygame.display.flip()
-            alpha += 2.5
-            clock.tick(30)
-    
-    def run_splash(self):
+            sprite.kill()
         
-        self.fade_in()
-        self.fade_out()
-        self.reveal_game()
+        for heart in range(amount):
+
+            x = 10 + heart * (self.heart_surface_width + self.heart_padding)
+            y = 10
+            
+            Heart(self.heart_frames, self.sprites, (x, y))
+
+    def display_text(self):
+
+        if self.coin_timer.active:
+
+            text_surface = self.font.render(str(self.coin_amount), False, "#33323d")
+            text_rectangle = text_surface.get_frect(topleft=(16, 34))
+            self.surface.blit(text_surface, text_rectangle)
+
+            coin_rectangle = self.coin_surface.get_frect(center=text_rectangle.bottomleft).move(0, -6)
+            self.surface.blit(self.coin_surface, coin_rectangle)
+    
+    def show_coins(self, amount):
+
+        self.coin_amount = amount
+        self.coin_timer.activate()
+    
+    def update(self, delta_time):
+
+        self.coin_timer.update()
+        self.sprites.update(delta_time)
+        self.sprites.draw(self.surface)
+        self.display_text()
+
+class Heart(AnimatedSprite):
+
+    def __init__(self, frames, groups, position):
+
+        super().__init__(frames, groups, position)
+        self.active = False
+
+    def animate(self, delta_time):
+
+        self.frame_index += c.ANIMATION_SPEED * delta_time
+
+        if self.frame_index < len(self.frames):
+
+            self.image = self.frames[int(self.frame_index)]
+
+        else:
+
+            self.active = False
+            self.frame_index = 0
+    
+    def update(self, delta_time):
+
+        if self.active:
+
+            self.animate(delta_time)
+
+        else:
+
+            if c.randint(0, 2000) == 1:
+
+                self.active = True

@@ -133,8 +133,8 @@ class AllSprites(c.Group):
     
     def draw_sky(self):
 
-        # self.surface.fill("#ddc6a1")
-        self.surface.fill(c.tense_yellow)
+        self.surface.fill("#ddc6a1")
+        # self.surface.fill(c.tense_yellow)
         horizon_position = self.horizon_line + self.offset.y
 
         sea_rectangle = c.FRect(0, horizon_position, c.WINDOW_WIDTH, c.WINDOW_HEIGHT - horizon_position)

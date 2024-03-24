@@ -4,7 +4,7 @@ import sprites as s
 
 class Overworld:
 
-    def __init__(self, data, overworld_frames, tmx_map):
+    def __init__(self, data, overworld_frames, switch_stage, tmx_map):
 
         self.surface = c.get_surface()
         self.data = data
@@ -154,7 +154,6 @@ class Overworld:
 
                     previous_tile = path[index - 1] - tile
                     next_tile = path[index + 1] - tile
-                    surface = c.Surface((c.TILE_SIZE, c.TILE_SIZE))
                     
                     if previous_tile.x == next_tile.x:
 
@@ -163,6 +162,40 @@ class Overworld:
                     elif previous_tile.y == next_tile.y:
 
                         surface = self.path_frames["horizontal"]
+
+                    else:
+
+                        if (
+                            previous_tile.x == -1 and next_tile.y == -1 or
+                            previous_tile.y == -1 and next_tile.x == -1
+                        ):
+
+                            surface = self.path_frames["tl"]
+
+                        elif (
+                            previous_tile.x == 1 and next_tile.y == 1 or
+                            previous_tile.y == 1 and next_tile.x == 1
+                        ):
+
+                            surface = self.path_frames["br"]
+
+                        elif (
+                            previous_tile.x == -1 and next_tile.y == 1 or
+                            previous_tile.y == 1 and next_tile.x == -1
+                        ):
+
+                            surface = self.path_frames["bl"]
+
+                        elif (
+                            previous_tile.x == 1 and next_tile.y == -1 or
+                            previous_tile.y == -1 and next_tile.x == 1
+                        ):
+
+                            surface = self.path_frames["tr"]
+
+                        else:
+
+                            surface = self.path_frames["horizontal"]
 
                     s.PathSprite(
                         groups=self.all_sprites,
@@ -174,7 +207,6 @@ class Overworld:
     def input(self):
 
         keys = c.get_pressed()
-        # input_vector = c.Vector2(0, 0)
 
         if self.current_node and not self.icon.path:
 

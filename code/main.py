@@ -24,25 +24,46 @@ class Game:
         )
         c.set_caption("Zone")
         self.clock = c.Clock()
+        self.level_frames = None
         self.import_assets()  # change to c.import_assets()
 
         self.ui = UI(self.font, self.ui_frames)
         self.data = Data(self.ui)
         # loads the individual levels
         self.tmx_maps = {
-            0: c.load_engine(c.join("..", "data", "levels", "1.tmx"))
+            0: c.load_engine(c.join("..", "data", "levels", "0.tmx")),
+            1: c.load_engine(c.join("..", "data", "levels", "1.tmx")),
+            2: c.load_engine(c.join("..", "data", "levels", "2.tmx")),
+            3: c.load_engine(c.join("..", "data", "levels", "3.tmx")),
+            4: c.load_engine(c.join("..", "data", "levels", "4.tmx")),
+            5: c.load_engine(c.join("..", "data", "levels", "5.tmx"))
         }
         self.tmx_overworld = c.load_engine(c.join("..", "data", "overworld", "overworld.tmx"))
-        self.current_level = Level(self.data, self.level_frames, self.tmx_maps[0])
+        self.current_stage = Level(self.data, self.level_frames, self.switch_stage, self.tmx_maps[0])
         """
         This takes the levels made in Tiled and passes them though the level class. The
         level class is what's doing the bulk of the work in this game.
         """
 
-        self.current_scene = Overworld(self.data, self.overworld_frames, self.tmx_overworld)
+    def switch_stage(self, target, unlock = 0):
 
-        self.level_frames = None
+        if target == "level":
 
+            # self.current_stage = Level()
+            pass
+
+        else:  # overworld
+
+            if unlock > 0:
+
+                self.data.unlocked_level = unlock
+
+            else:
+
+                self.data.health -= 1
+                
+            self.current_stage = Overworld(self.data, self.overworld_frames, self.switch_stage, self.tmx_overworld)
+        
     def import_assets(self):
         """
         This is probably going to get moved to core.
@@ -117,8 +138,7 @@ class Game:
                     c.exit()
 
             # runs the level class with the delta time
-            # self.current_level.run(delta_time)
-            self.current_scene.run(delta_time)
+            self.current_stage.run(delta_time)
             self.ui.update(delta_time)
             c.update()  # updates the game
             # self.clock.tick(30)

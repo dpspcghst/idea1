@@ -7,16 +7,19 @@ import sprites as s
 
 class Level:
 
-    def __init__(self, data, level_frames, tmx_map):
+    def __init__(self, data, level_frames, switch_stage, tmx_map):
 
         self.surface = c.get_surface()
         self.data = data
+        self.switch_stage = switch_stage
 
         # level data
         self.level_right = tmx_map.width * c.TILE_SIZE
         self.level_bottom = tmx_map.height * c.TILE_SIZE
         
         tmx_level_properties = tmx_map.get_layer_by_name("Data")[0].properties
+
+        self.level_unlock = tmx_level_properties["level_unlock"]
 
         if tmx_level_properties["bg"]:
 
@@ -408,7 +411,7 @@ class Level:
         # bottom
         if self.player.hit_box_rectangle.bottom > self.level_bottom:
 
-            self.player.hit_box_rectangle.bottom = self.level_bottom
+            self.switch_stage("overworld", -1)
         
         # left
         if self.player.hit_box_rectangle.left <= 0:
@@ -423,7 +426,7 @@ class Level:
         # success
         if self.player.hit_box_rectangle.colliderect(self.level_finish_rectangle):
 
-            pass
+            self.switch_stage("overworld", self.level_unlock)
 
     def run(self, delta_time):
 
